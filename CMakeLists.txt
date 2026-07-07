@@ -5,6 +5,7 @@ project(CreatureBuilderOpenGLShell LANGUAGES CXX)
 add_executable(CreatureBuilder WIN32
     src/engineloader.cpp
     src/main.cpp
+    src/shapeModel.cpp
 )
 
 target_compile_features(CreatureBuilder PRIVATE cxx_std_17)

@@ -1,11 +1,71 @@
 #include <windows.h>
+#include <windowsx.h>
 
 #include "engineloader.h"
+#include "shapeModel.h"
 
 namespace
 {
 constexpr wchar_t kWindowClassName[] = L"CreatureBuilderOpenGLWindow";
 constexpr wchar_t kWindowTitle[] = L"CreatureBuilder OpenGL Shell";
+ShapeModel::DrawingState g_drawingState;
+bool g_isDragging = false;
+
+ShapeModel::Point PointFromLParam(LPARAM lParam)
+{
+    return ShapeModel::Point{
+        static_cast<float>(GET_X_LPARAM(lParam)),
+        static_cast<float>(GET_Y_LPARAM(lParam))
+    };
+}
+
+const wchar_t* ToolName(ShapeModel::ShapeType tool)
+{
+    switch (tool)
+    {
+    case ShapeModel::ShapeType::Circle:
+        return L"Circle";
+    case ShapeModel::ShapeType::Square:
+        return L"Square";
+    case ShapeModel::ShapeType::Triangle:
+        return L"Triangle";
+    }
+
+    return L"Unknown";
+}
+
+bool ToolFromKey(WPARAM key, ShapeModel::ShapeType& tool)
+{
+    switch (key)
+    {
+    case '1':
+        tool = ShapeModel::ShapeType::Circle;
+        return true;
+    case '2':
+        tool = ShapeModel::ShapeType::Square;
+        return true;
+    case '3':
+        tool = ShapeModel::ShapeType::Triangle;
+        return true;
+    default:
+        return false;
+    }
+}
+
+void UpdateWindowTitle(HWND window)
+{
+    const wchar_t* tool = ToolName(g_drawingState.currentTool);
+    wchar_t title[160]{};
+    wsprintfW(title, L"%s | Tool: %s (1 Circle, 2 Square, 3 Triangle, C Clear)", kWindowTitle, tool);
+    SetWindowTextW(window, title);
+}
+
+void RenderWindow(HWND window)
+{
+    RECT clientRect{};
+    GetClientRect(window, &clientRect);
+    EngineLoader::RenderFrame(clientRect.right - clientRect.left, clientRect.bottom - clientRect.top, g_drawingState);
+}
 }
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -18,7 +78,75 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         {
             const int width = LOWORD(lParam);
             const int height = HIWORD(lParam);
-            EngineLoader::RenderFrame(width, height);
+            EngineLoader::RenderFrame(width, height, g_drawingState);
+        }
+        return 0;
+    }
+    case WM_KEYDOWN:
+    {
+        ShapeModel::ShapeType nextTool = g_drawingState.currentTool;
+        if (ToolFromKey(wParam, nextTool))
+        {
+            g_drawingState.currentTool = nextTool;
+            UpdateWindowTitle(window);
+            return 0;
+        }
+
+        if (wParam == 'C' || wParam == 'c')
+        {
+            g_drawingState.shapes.clear();
+            ShapeModel::cancelDrag(g_drawingState);
+            g_isDragging = false;
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        }
+
+        return DefWindowProcW(window, message, wParam, lParam);
+    }
+    case WM_LBUTTONDOWN:
+    {
+        SetCapture(window);
+        g_isDragging = true;
+        ShapeModel::beginDrag(g_drawingState, PointFromLParam(lParam));
+        InvalidateRect(window, nullptr, FALSE);
+        return 0;
+    }
+    case WM_MOUSEMOVE:
+    {
+        if (g_isDragging && (wParam & MK_LBUTTON) != 0)
+        {
+            ShapeModel::updateDrag(g_drawingState, PointFromLParam(lParam));
+            InvalidateRect(window, nullptr, FALSE);
+        }
+        return 0;
+    }
+    case WM_LBUTTONUP:
+    {
+        if (g_isDragging)
+        {
+            ShapeModel::updateDrag(g_drawingState, PointFromLParam(lParam));
+            ShapeModel::commitDrag(g_drawingState);
+            g_isDragging = false;
+            ReleaseCapture();
+            InvalidateRect(window, nullptr, FALSE);
+        }
+        return 0;
+    }
+    case WM_RBUTTONDOWN:
+    {
+        ShapeModel::cancelDrag(g_drawingState);
+        g_isDragging = false;
+        ReleaseCapture();
+        InvalidateRect(window, nullptr, FALSE);
+        return 0;
+    }
+    case WM_CAPTURECHANGED:
+    {
+        if (g_isDragging)
+        {
+            ShapeModel::cancelDrag(g_drawingState);
+            g_isDragging = false;
+            InvalidateRect(window, nullptr, FALSE);
         }
         return 0;
     }
@@ -27,9 +155,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         PAINTSTRUCT paint{};
         BeginPaint(window, &paint);
 
-        RECT clientRect{};
-        GetClientRect(window, &clientRect);
-    EngineLoader::RenderFrame(clientRect.right - clientRect.left, clientRect.bottom - clientRect.top);
+        RenderWindow(window);
 
         EndPaint(window, &paint);
         return 0;
@@ -82,12 +208,16 @@ int WINAPI wWinMain(HINSTANCE instanceHandle, HINSTANCE, PWSTR, int showCommand)
         return 1;
     }
 
+    g_drawingState.currentStyle.fillColour = ShapeModel::Colour{240, 170, 70, 255};
+    g_drawingState.currentStyle.strokeColour = ShapeModel::Colour{245, 245, 245, 255};
+    g_drawingState.currentStyle.strokeWidth = 2.0f;
+    g_drawingState.currentStyle.hasFill = true;
+
     ShowWindow(window, showCommand);
     UpdateWindow(window);
 
-    RECT clientRect{};
-    GetClientRect(window, &clientRect);
-    EngineLoader::RenderFrame(clientRect.right - clientRect.left, clientRect.bottom - clientRect.top);
+    UpdateWindowTitle(window);
+    RenderWindow(window);
 
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0)
