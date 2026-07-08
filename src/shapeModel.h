@@ -1,9 +1,10 @@
 #ifndef SHAPEMODEL_H
 #define SHAPEMODEL_H
 
-#include <vector>
-#include <optional>
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace ShapeModel
 {
@@ -66,10 +67,22 @@ namespace ShapeModel
         int nextShapeId = 1;
     };
 
+    enum class CommitResult
+    {
+        Added,
+        NoActiveShape,
+        Detached
+    };
+
     void beginDrag(DrawingState& state, Point start);
     void updateDrag(DrawingState& state, Point end);
-    void commitDrag(DrawingState& state);
+    CommitResult commitDrag(DrawingState& state);
     void cancelDrag(DrawingState& state);
+
+    bool canCommitActiveShape(const DrawingState& state);
+    bool isCreatureConnected(const DrawingState& state);
+    bool saveCreature(const DrawingState& state, const std::wstring& filePath, std::wstring& errorMessage);
+    bool loadCreature(DrawingState& state, const std::wstring& filePath, std::wstring& errorMessage);
 }
 
 #endif

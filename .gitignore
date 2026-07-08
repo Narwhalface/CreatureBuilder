@@ -28,3 +28,6 @@ Makefile
 # Misc editor and OS files
 Thumbs.db
 .DS_Store
+
+# Local implementation notes
+/IMPLEMENTATION_GUIDE.md

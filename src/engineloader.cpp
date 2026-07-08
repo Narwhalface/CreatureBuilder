@@ -120,15 +120,31 @@ void DrawShape(const ShapeModel::Shape& shape)
     }
 }
 
-void DrawDragPreview(const ShapeModel::DragState& dragState)
+void DrawDragPreview(const ShapeModel::DrawingState& drawingState)
 {
+    if (!drawingState.activeState.has_value())
+    {
+        return;
+    }
+
+    const ShapeModel::DragState& dragState = drawingState.activeState.value();
     ShapeModel::ShapeStyle previewStyle = dragState.style;
-    previewStyle.fillColour.r = static_cast<uint8_t>((std::min)(255, previewStyle.fillColour.r + 30));
-    previewStyle.fillColour.g = static_cast<uint8_t>((std::min)(255, previewStyle.fillColour.g + 30));
-    previewStyle.fillColour.b = static_cast<uint8_t>((std::min)(255, previewStyle.fillColour.b + 30));
-    previewStyle.strokeColour.r = static_cast<uint8_t>((std::min)(255, previewStyle.strokeColour.r + 20));
-    previewStyle.strokeColour.g = static_cast<uint8_t>((std::min)(255, previewStyle.strokeColour.g + 20));
-    previewStyle.strokeColour.b = static_cast<uint8_t>((std::min)(255, previewStyle.strokeColour.b + 20));
+    const bool previewIsValid = ShapeModel::canCommitActiveShape(drawingState);
+
+    if (previewIsValid)
+    {
+        previewStyle.fillColour.r = static_cast<uint8_t>((std::min)(255, previewStyle.fillColour.r + 30));
+        previewStyle.fillColour.g = static_cast<uint8_t>((std::min)(255, previewStyle.fillColour.g + 30));
+        previewStyle.fillColour.b = static_cast<uint8_t>((std::min)(255, previewStyle.fillColour.b + 30));
+        previewStyle.strokeColour.r = static_cast<uint8_t>((std::min)(255, previewStyle.strokeColour.r + 20));
+        previewStyle.strokeColour.g = static_cast<uint8_t>((std::min)(255, previewStyle.strokeColour.g + 20));
+        previewStyle.strokeColour.b = static_cast<uint8_t>((std::min)(255, previewStyle.strokeColour.b + 20));
+    }
+    else
+    {
+        previewStyle.fillColour = ShapeModel::Colour{190, 65, 65, 170};
+        previewStyle.strokeColour = ShapeModel::Colour{255, 220, 220, 255};
+    }
 
     const float halfExtent = ComputeHalfExtent(dragState.start, dragState.end);
 
@@ -242,7 +258,7 @@ void RenderFrame(int width, int height, const ShapeModel::DrawingState& drawingS
 
     if (drawingState.activeState.has_value())
     {
-        DrawDragPreview(drawingState.activeState.value());
+        DrawDragPreview(drawingState);
     }
 
     SwapBuffers(g_deviceContext);

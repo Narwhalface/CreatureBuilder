@@ -13,6 +13,7 @@ target_compile_features(CreatureBuilder PRIVATE cxx_std_17)
 target_compile_definitions(CreatureBuilder PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 
 target_link_libraries(CreatureBuilder PRIVATE
+    comdlg32
     opengl32
 )
 

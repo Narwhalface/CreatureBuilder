@@ -1,5 +1,8 @@
 #include <windows.h>
 #include <windowsx.h>
+#include <commdlg.h>
+
+#include <string>
 
 #include "engineloader.h"
 #include "shapeModel.h"
@@ -10,6 +13,24 @@ constexpr wchar_t kWindowClassName[] = L"CreatureBuilderOpenGLWindow";
 constexpr wchar_t kWindowTitle[] = L"CreatureBuilder OpenGL Shell";
 ShapeModel::DrawingState g_drawingState;
 bool g_isDragging = false;
+
+std::wstring CreatureFileDialog(HWND window, bool saving)
+{
+    wchar_t filePath[MAX_PATH]{};
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = window;
+    dialog.lpstrFilter = L"Creature Files (*.ctr)\0*.ctr\0All Files (*.*)\0*.*\0";
+    dialog.lpstrFile = filePath;
+    dialog.nMaxFile = static_cast<DWORD>(std::size(filePath));
+    dialog.lpstrDefExt = L"ctr";
+    dialog.Flags = saving
+        ? (OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT)
+        : (OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST);
+
+    const BOOL result = saving ? GetSaveFileNameW(&dialog) : GetOpenFileNameW(&dialog);
+    return result == TRUE ? std::wstring(filePath) : std::wstring();
+}
 
 ShapeModel::Point PointFromLParam(LPARAM lParam)
 {
@@ -55,9 +76,57 @@ bool ToolFromKey(WPARAM key, ShapeModel::ShapeType& tool)
 void UpdateWindowTitle(HWND window)
 {
     const wchar_t* tool = ToolName(g_drawingState.currentTool);
-    wchar_t title[160]{};
-    wsprintfW(title, L"%s | Tool: %s (1 Circle, 2 Square, 3 Triangle, C Clear)", kWindowTitle, tool);
+    const wchar_t* status = g_drawingState.shapes.empty() ? L"Start drawing" : L"Creature connected";
+    wchar_t title[256]{};
+    wsprintfW(title, L"%s | Tool: %s | %s | 1 Circle, 2 Square, 3 Triangle, S Save, L Load, C Clear",
+        kWindowTitle,
+        tool,
+        status);
     SetWindowTextW(window, title);
+}
+
+void ShowMessage(HWND window, const wchar_t* title, const std::wstring& message, UINT flags)
+{
+    MessageBoxW(window, message.c_str(), title, flags | MB_OK);
+}
+
+void SaveCreature(HWND window)
+{
+    const std::wstring filePath = CreatureFileDialog(window, true);
+    if (filePath.empty())
+    {
+        return;
+    }
+
+    std::wstring errorMessage;
+    if (!ShapeModel::saveCreature(g_drawingState, filePath, errorMessage))
+    {
+        ShowMessage(window, L"Save Creature", errorMessage, MB_ICONWARNING);
+        return;
+    }
+
+    ShowMessage(window, L"Save Creature", L"Creature saved successfully.", MB_ICONINFORMATION);
+}
+
+void LoadCreature(HWND window)
+{
+    const std::wstring filePath = CreatureFileDialog(window, false);
+    if (filePath.empty())
+    {
+        return;
+    }
+
+    std::wstring errorMessage;
+    if (!ShapeModel::loadCreature(g_drawingState, filePath, errorMessage))
+    {
+        ShowMessage(window, L"Load Creature", errorMessage, MB_ICONWARNING);
+        return;
+    }
+
+    ShapeModel::cancelDrag(g_drawingState);
+    g_isDragging = false;
+    UpdateWindowTitle(window);
+    InvalidateRect(window, nullptr, FALSE);
 }
 
 void RenderWindow(HWND window)
@@ -97,7 +166,20 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             g_drawingState.shapes.clear();
             ShapeModel::cancelDrag(g_drawingState);
             g_isDragging = false;
+            UpdateWindowTitle(window);
             InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        }
+
+        if (wParam == 'S' || wParam == 's')
+        {
+            SaveCreature(window);
+            return 0;
+        }
+
+        if (wParam == 'L' || wParam == 'l')
+        {
+            LoadCreature(window);
             return 0;
         }
 
@@ -125,9 +207,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         if (g_isDragging)
         {
             ShapeModel::updateDrag(g_drawingState, PointFromLParam(lParam));
-            ShapeModel::commitDrag(g_drawingState);
+            const ShapeModel::CommitResult result = ShapeModel::commitDrag(g_drawingState);
             g_isDragging = false;
             ReleaseCapture();
+            if (result == ShapeModel::CommitResult::Detached)
+            {
+                ShowMessage(window, L"Attach Shapes", L"Each new shape must touch the existing creature.", MB_ICONWARNING);
+            }
+            UpdateWindowTitle(window);
             InvalidateRect(window, nullptr, FALSE);
         }
         return 0;
