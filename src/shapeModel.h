@@ -1,79 +1,12 @@
 #ifndef SHAPEMODEL_H
 #define SHAPEMODEL_H
 
-#include <cstdint>
-#include <optional>
 #include <string>
-#include <vector>
+
+#include "model/creature_types.h"
 
 namespace ShapeModel
 {
-    enum class ShapeType
-    {
-        Circle,
-        Square,
-        Triangle
-    };
-
-    struct Point
-    {
-        float x = 0.0f;
-        float y = 0.0f;
-    };
-
-    struct Colour
-    {
-        uint8_t r = 0;
-        uint8_t g = 0;
-        uint8_t b = 0;
-        uint8_t a = 255;
-    };
-
-    struct ShapeStyle
-    {
-        Colour strokeColour;
-        Colour fillColour;
-        float strokeWidth = 1.0f;
-        bool hasFill = true;
-    };
-
-    struct Shape
-    {
-        int id = 0;
-        ShapeType type;
-        Point start;
-        Point end;
-        ShapeStyle style;
-        bool selected = false;
-    };
-
-    struct DragState
-    {
-        ShapeType type;
-        Point start;
-        Point end;
-        ShapeStyle style;
-    };
-
-    struct DrawingState
-    {
-        std::vector<Shape> shapes;
-
-        std::optional<DragState> activeState;
-
-        ShapeType currentTool = ShapeType::Circle;
-        ShapeStyle currentStyle;
-
-        int nextShapeId = 1;
-    };
-
-    enum class CommitResult
-    {
-        Added,
-        NoActiveShape,
-        Detached
-    };
-
     void beginDrag(DrawingState& state, Point start);
     void updateDrag(DrawingState& state, Point end);
     CommitResult commitDrag(DrawingState& state);
@@ -81,6 +14,10 @@ namespace ShapeModel
 
     bool canCommitActiveShape(const DrawingState& state);
     bool isCreatureConnected(const DrawingState& state);
+    void setAnimationPlaying(DrawingState& state, bool isPlaying);
+    bool isAnimationPlaying(const DrawingState& state);
+    void setAnimationTarget(DrawingState& state, Point target);
+    void advanceAnimation(DrawingState& state, float deltaSeconds, float viewportWidth, float viewportHeight);
     bool saveCreature(const DrawingState& state, const std::wstring& filePath, std::wstring& errorMessage);
     bool loadCreature(DrawingState& state, const std::wstring& filePath, std::wstring& errorMessage);
 }

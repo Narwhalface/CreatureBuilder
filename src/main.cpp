@@ -2,6 +2,7 @@
 #include <windowsx.h>
 #include <commdlg.h>
 
+#include <algorithm>
 #include <string>
 
 #include "engineloader.h"
@@ -11,8 +12,39 @@ namespace
 {
 constexpr wchar_t kWindowClassName[] = L"CreatureBuilderOpenGLWindow";
 constexpr wchar_t kWindowTitle[] = L"CreatureBuilder OpenGL Shell";
+constexpr UINT_PTR kAnimationTimerId = 1;
+constexpr UINT kAnimationTimerMs = 16;
 ShapeModel::DrawingState g_drawingState;
 bool g_isDragging = false;
+DWORD g_lastAnimationTickMs = 0;
+
+void UpdateAnimationTarget(ShapeModel::Point point)
+{
+    ShapeModel::setAnimationTarget(g_drawingState, point);
+}
+
+void SetAnimationMode(HWND window, bool isPlaying)
+{
+    ShapeModel::setAnimationPlaying(g_drawingState, isPlaying);
+    if (isPlaying)
+    {
+        POINT cursorPosition{};
+        if (GetCursorPos(&cursorPosition) != FALSE && ScreenToClient(window, &cursorPosition) != FALSE)
+        {
+            UpdateAnimationTarget(ShapeModel::Point{
+                static_cast<float>(cursorPosition.x),
+                static_cast<float>(cursorPosition.y)
+            });
+        }
+
+        g_lastAnimationTickMs = GetTickCount();
+        SetTimer(window, kAnimationTimerId, kAnimationTimerMs, nullptr);
+    }
+    else
+    {
+        KillTimer(window, kAnimationTimerId);
+    }
+}
 
 std::wstring CreatureFileDialog(HWND window, bool saving)
 {
@@ -76,9 +108,11 @@ bool ToolFromKey(WPARAM key, ShapeModel::ShapeType& tool)
 void UpdateWindowTitle(HWND window)
 {
     const wchar_t* tool = ToolName(g_drawingState.currentTool);
-    const wchar_t* status = g_drawingState.shapes.empty() ? L"Start drawing" : L"Creature connected";
-    wchar_t title[256]{};
-    wsprintfW(title, L"%s | Tool: %s | %s | 1 Circle, 2 Square, 3 Triangle, S Save, L Load, C Clear",
+    const wchar_t* status = ShapeModel::isAnimationPlaying(g_drawingState)
+        ? L"Playing"
+        : (g_drawingState.shapes.empty() ? L"Start drawing" : L"Ready");
+    wchar_t title[300]{};
+    wsprintfW(title, L"%s | Tool: %s | %s | 1 Circle, 2 Square, 3 Triangle, P Play/Pause, S Save, L Load, C Clear",
         kWindowTitle,
         tool,
         status);
@@ -163,9 +197,32 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
         if (wParam == 'C' || wParam == 'c')
         {
+            SetAnimationMode(window, false);
             g_drawingState.shapes.clear();
             ShapeModel::cancelDrag(g_drawingState);
             g_isDragging = false;
+            UpdateWindowTitle(window);
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        }
+
+        if (wParam == 'P' || wParam == 'p')
+        {
+            if (g_drawingState.shapes.empty())
+            {
+                ShowMessage(window, L"Animation", L"Draw a connected creature before pressing play.", MB_ICONWARNING);
+                return 0;
+            }
+
+            if (g_isDragging)
+            {
+                ShapeModel::cancelDrag(g_drawingState);
+                g_isDragging = false;
+                ReleaseCapture();
+            }
+
+            const bool nextAnimationState = !ShapeModel::isAnimationPlaying(g_drawingState);
+            SetAnimationMode(window, nextAnimationState);
             UpdateWindowTitle(window);
             InvalidateRect(window, nullptr, FALSE);
             return 0;
@@ -185,6 +242,31 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
         return DefWindowProcW(window, message, wParam, lParam);
     }
+    case WM_TIMER:
+    {
+        if (wParam != kAnimationTimerId || !ShapeModel::isAnimationPlaying(g_drawingState))
+        {
+            return 0;
+        }
+
+        const DWORD nowMs = GetTickCount();
+        DWORD elapsedMs = nowMs - g_lastAnimationTickMs;
+        g_lastAnimationTickMs = nowMs;
+
+        elapsedMs = (std::min)(elapsedMs, static_cast<DWORD>(50));
+        const float deltaSeconds = static_cast<float>(elapsedMs) * 0.001f;
+
+        RECT clientRect{};
+        GetClientRect(window, &clientRect);
+        ShapeModel::advanceAnimation(
+            g_drawingState,
+            deltaSeconds,
+            static_cast<float>(clientRect.right - clientRect.left),
+            static_cast<float>(clientRect.bottom - clientRect.top));
+
+        InvalidateRect(window, nullptr, FALSE);
+        return 0;
+    }
     case WM_LBUTTONDOWN:
     {
         SetCapture(window);
@@ -195,9 +277,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     }
     case WM_MOUSEMOVE:
     {
+        const ShapeModel::Point cursorPoint = PointFromLParam(lParam);
+        UpdateAnimationTarget(cursorPoint);
+
         if (g_isDragging && (wParam & MK_LBUTTON) != 0)
         {
-            ShapeModel::updateDrag(g_drawingState, PointFromLParam(lParam));
+            ShapeModel::updateDrag(g_drawingState, cursorPoint);
             InvalidateRect(window, nullptr, FALSE);
         }
         return 0;
@@ -248,6 +333,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         return 0;
     }
     case WM_DESTROY:
+        SetAnimationMode(window, false);
         PostQuitMessage(0);
         return 0;
     default:

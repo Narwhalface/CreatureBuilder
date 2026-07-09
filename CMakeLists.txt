@@ -5,6 +5,7 @@ project(CreatureBuilderOpenGLShell LANGUAGES CXX)
 add_executable(CreatureBuilder WIN32
     src/engineloader.cpp
     src/main.cpp
+    src/model/creature_geometry.cpp
     src/shapeModel.cpp
 )
 
